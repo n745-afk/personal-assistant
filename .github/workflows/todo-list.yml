@@ -1,0 +1,50 @@
+name: Список дел на день
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      category:
+        description: 'Категория задач'
+        required: false
+        default: 'ежедневные'
+        type: choice
+        options:
+          - ежедневные
+          - учебные
+          - личные
+
+jobs:
+  send-todo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Загружаем репозиторий
+        uses: actions/checkout@v4
+      
+      - name: Устанавливаем jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      
+      - name: Формируем список задач
+        id: tasks
+        run: |
+          CATEGORY="${{ github.event.inputs.category || 'ежедневные' }}"
+          TASKS=$(jq -r ".\"$CATEGORY\"[]" tasks.json)
+          
+          MESSAGE="*СПИСОК ДЕЛ НА СЕГОДНЯ*"
+          MESSAGE="$MESSAGE%0AКатегория: $CATEGORY"
+          MESSAGE="$MESSAGE%0A%0A*Задачи:*"
+          
+          while IFS= read -r task; do
+            MESSAGE="$MESSAGE%0A• $task"
+          done <<< "$TASKS"
+          
+          MESSAGE="$MESSAGE%0A%0A_Отмечайте выполненные задачи!_"
+          echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+      
+      - name: Отправляем в Telegram
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="${{ steps.tasks.outputs.message }}" \
+            -d parse_mode="MarkdownV2"

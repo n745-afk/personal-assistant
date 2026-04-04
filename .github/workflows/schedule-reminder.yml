@@ -1,0 +1,52 @@
+name: Напоминание о расписании
+
+on:
+  schedule:
+    - cron: '30 7 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  send-schedule:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Загружаем репозиторий
+        uses: actions/checkout@v4
+      
+      - name: Устанавливаем jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      
+      - name: Определяем день недели
+        id: day_of_week
+        run: |
+          DAY_NUM=$(date +%u)
+          case $DAY_NUM in
+            1) echo "day=понедельник" ;;
+            2) echo "day=вторник" ;;
+            3) echo "day=среда" ;;
+            4) echo "day=четверг" ;;
+            5) echo "day=пятница" ;;
+            6) echo "day=суббота" ;;
+            7) echo "day=воскресенье" ;;
+          esac >> $GITHUB_OUTPUT
+      
+      - name: Формируем расписание
+        id: schedule
+        run: |
+          DAY="${{ steps.day_of_week.outputs.day }}"
+          if jq -e ".\"$DAY\"" schedule.json > /dev/null 2>&1; then
+            SCHEDULE=$(jq -r ".\"$DAY\"[] | \"• \(.time) - \(.subject) (ауд. \(.room))\"" schedule.json)
+            echo "message<<EOF" >> $GITHUB_OUTPUT
+            echo "*РАСПИСАНИЕ НА $DAY*" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "$SCHEDULE" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "message=*ПАР НЕТ!* Можно отдохнуть." >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Отправляем в Telegram
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="${{ steps.schedule.outputs.message }}" \
+            -d parse_mode="MarkdownV2"

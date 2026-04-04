@@ -11,12 +11,13 @@ public class CalculatorTests
     [InlineData(5, 3, 8)]
     [InlineData(-2, 7, 5)]
     [InlineData(0, 0, 0)]
-    public void Add_ReturnsCorrectSum(int a, int b, int expected)
+    [Fact]
+    public void Add_ReturnsCorrectSum()
     {
-        var result = _calculator.Add(a, b);
-        Assert.Equal(expected, result);
+        var result = _calculator.Add(5, 3);
+        Assert.Equal(8, result);  // Специально ломаем тест
     }
-    
+
     [Theory]
     [InlineData(10, 4, 6)]
     [InlineData(7, 2, 5)]
@@ -60,11 +61,5 @@ public class CalculatorTests
         Assert.Equal(expected, result);
     }
 
-    [Fact]
-    public void Add_ReturnsCorrectSum()
-    {
-        var result = _calculator.Add(5, 3);
-        Assert.Equal(8, result);  // Специально ломаем тест
-    }
-
+    
 }

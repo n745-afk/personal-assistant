@@ -1,0 +1,125 @@
+name: Планировщик путешествий
+
+
+on:
+  workflow_dispatch:
+    inputs:
+      destination:
+        description: 'Город назначения'
+        required: true
+        default: 'москва'
+        type: choice
+        options:
+          - москва
+          - санкт-петербург
+          - сочи
+      days:
+        description: 'Количество дней'
+        required: true
+        default: '3'
+        type: string
+      budget:
+        description: 'Бюджет (руб)'
+        required: true
+        default: '30000'
+        type: string
+      season:
+        description: 'Сезон'
+        required: true
+        default: 'лето'
+        type: choice
+        options:
+          - лето
+          - зима
+          - весна-осень
+
+
+jobs:
+  generate-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Загружаем код
+        uses: actions/checkout@v4
+
+
+      - name: Устанавливаем yq и jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+
+      - name: Получаем погоду
+        id: weather
+        run: |
+          CITY_ID=$(yq eval ".destinations.${{ github.event.inputs.destination }}.id" travel_config.yaml)
+          RESPONSE=$(curl -s "https://api.openweathermap.org/data/2.5/weather?id=$CITY_ID&appid=${{ secrets.OPENWEATHER_API_KEY }}&units=metric&lang=ru")
+          echo "temp=$(echo $RESPONSE | jq -r '.main.temp')" >> $GITHUB_OUTPUT
+          echo "description=$(echo $RESPONSE | jq -r '.weather[0].description')" >> $GITHUB_OUTPUT
+
+
+      - name: Формируем список вещей
+        id: packing
+        run: |
+          ITEMS=$(yq eval ".packing_lists.\"${{ github.event.inputs.season }}\".обязательно[]" travel_config.yaml)
+          PACKING=""
+          while IFS= read -r item; do
+            PACKING="${PACKING}• ${item}\n"
+          done <<< "$ITEMS"
+          echo "list=$PACKING" >> $GITHUB_OUTPUT
+
+
+      - name: Рассчитываем бюджет
+        id: budget
+        run: |
+          DAYS=${{ github.event.inputs.days }}
+          BUDGET=${{ github.event.inputs.budget }}
+          TOTAL=$((8000 + 3000*DAYS + 1500*DAYS + 1000*DAYS))
+          if [ $TOTAL -le $BUDGET ]; then
+            STATUS="✅ Укладываемся в бюджет"
+          else
+            STATUS="⚠️ Превышаем бюджет на $((TOTAL - BUDGET)) руб"
+          fi
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+
+      - name: Получаем советы
+        id: tips
+        run: |
+          TIPS=$(yq eval '.travel_tips.общие[]' travel_config.yaml)
+          TIPS_TEXT=""
+          while IFS= read -r tip; do
+            TIPS_TEXT="${TIPS_TEXT}• ${tip}\n"
+          done <<< "$TIPS"
+          echo "text=$TIPS_TEXT" >> $GITHUB_OUTPUT
+
+
+      - name: Отправляем в Telegram
+        run: |
+          MESSAGE="🏖️ ПЛАН ПУТЕШЕСТВИЯ В ${{ github.event.inputs.destination }}%0A%0A"
+          MESSAGE="${MESSAGE}📅 Длительность: ${{ github.event.inputs.days }} дней%0A"
+          MESSAGE="${MESSAGE}🌡️ Погода: ${{ steps.weather.outputs.temp }}°C, ${{ steps.weather.outputs.description }}%0A%0A"
+          MESSAGE="${MESSAGE}💰 Бюджет: ${{ steps.budget.outputs.total }} руб%0A"
+          MESSAGE="${MESSAGE}📊 ${{ steps.budget.outputs.status }}%0A%0A"
+          MESSAGE="${MESSAGE}🎒 Что взять:%0A${{ steps.packing.outputs.list }}%0A"
+          MESSAGE="${MESSAGE}💡 Советы:%0A${{ steps.tips.outputs.text }}"
+          
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="$MESSAGE"
+
+
+      - name: Сохраняем план в файл
+        run: |
+          FILENAME="travel_plan_$(date +%Y%m%d_%H%M%S).txt"
+          echo "План путешествия в ${{ github.event.inputs.destination }}" > $FILENAME
+          echo "Длительность: ${{ github.event.inputs.days }} дней" >> $FILENAME
+          echo "Погода: ${{ steps.weather.outputs.temp }}°C" >> $FILENAME
+          echo "Бюджет: ${{ steps.budget.outputs.total }} руб" >> $FILENAME
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+          git add $FILENAME
+          git commit -m "Добавлен план путешествия" || echo "Нет изменений"
+          git push || echo "Нечего пушить"

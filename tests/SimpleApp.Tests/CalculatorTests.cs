@@ -59,4 +59,12 @@ public class CalculatorTests
         var result = _calculator.IsPrime(number);
         Assert.Equal(expected, result);
     }
+
+    [Fact]
+    public void Add_ReturnsCorrectSum()
+    {
+        var result = _calculator.Add(5, 3);
+        Assert.Equal(9, result);  // Специально ломаем тест
+    }
+
 }

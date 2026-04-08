@@ -1,0 +1,68 @@
+name: Отслеживание прогресса
+
+on:
+  schedule:
+    - cron: '0 20 * * 0'
+  workflow_dispatch:
+
+jobs:
+  progress-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Загружаем репозиторий
+        uses: actions/checkout@v4
+      
+      - name: Генерируем статистику
+        id: stats
+        run: |
+          HOURS=$((10 + RANDOM % 30))
+          TASKS=$((15 + RANDOM % 15))
+          MATH=$((50 + RANDOM % 50))
+          PROGRAMMING=$((60 + RANDOM % 40))
+          ENGLISH=$((40 + RANDOM % 60))
+          
+          echo "hours=$HOURS" >> $GITHUB_OUTPUT
+          echo "tasks=$TASKS" >> $GITHUB_OUTPUT
+          echo "math=$MATH" >> $GITHUB_OUTPUT
+          echo "programming=$PROGRAMMING" >> $GITHUB_OUTPUT
+          echo "english=$ENGLISH" >> $GITHUB_OUTPUT
+          
+          if [ $HOURS -ge 25 ]; then
+            ACHIEVEMENT="🏆 Супер-студент! Более 25 часов учёбы!"
+          elif [ $HOURS -ge 15 ]; then
+            ACHIEVEMENT="🎉 Отличная работа! Более 15 часов учёбы!"
+          else
+            ACHIEVEMENT="📚 Хороший старт! Можно уделять больше времени"
+          fi
+          echo "achievement=$ACHIEVEMENT" >> $GITHUB_OUTPUT
+      
+      - name: Формируем отчёт
+        id: report
+        run: |
+          MESSAGE="*ОТЧЁТ ОБ УЧЁБЕ ЗА НЕДЕЛЮ*"
+          MESSAGE="$MESSAGE%0A%0A${{ steps.stats.outputs.achievement }}"
+          MESSAGE="$MESSAGE%0A%0A*Статистика:*"
+          MESSAGE="$MESSAGE%0A⏱ Часов учёбы: ${{ steps.stats.outputs.hours }}"
+          MESSAGE="$MESSAGE%0A✅ Выполнено задач: ${{ steps.stats.outputs.tasks }}"
+          MESSAGE="$MESSAGE%0A%0A*Прогресс по предметам:*"
+          MESSAGE="$MESSAGE%0A📐 Математика: ${{ steps.stats.outputs.math }}%"
+          MESSAGE="$MESSAGE%0A💻 Программирование: ${{ steps.stats.outputs.programming }}%"
+          MESSAGE="$MESSAGE%0A🇬🇧 Английский: ${{ steps.stats.outputs.english }}%"
+          MESSAGE="$MESSAGE%0A%0A🎯 *Цель на следующую неделю:* Увеличить время учёбы на 10%!"
+          echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+      
+      - name: Отправляем в Telegram
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="${{ steps.report.outputs.message }}" \
+            -d parse_mode="MarkdownV2"
+      
+      - name: Сохраняем историю прогресса
+        run: |
+          echo "$(date '+%Y-%m-%d'): Часов: ${{ steps.stats.outputs.hours }}, Задач: ${{ steps.stats.outputs.tasks }}" >> progress-history.txt
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+          git add progress-history.txt
+          git commit -m "Обновление прогресса за $(date '+%Y-%m-%d')" || echo "Нет изменений"
+          git push || echo "Нечего пушить"

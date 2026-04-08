@@ -1,6 +1,3 @@
-name: Планировщик путешествий
-
-
 on:
   workflow_dispatch:
     inputs:
